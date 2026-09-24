@@ -25,7 +25,10 @@
     body { background:#eef2f7; color:#172033; font-family:'DM Sans',sans-serif; }
     .font-display { font-family:'Plus Jakarta Sans',sans-serif; }
     #map { height:100%; width:100%; }
-    .ol-control { display:none; }
+    .ol-attribution { right:12px; bottom:12px; border-radius:10px; overflow:hidden; background:rgba(255,255,255,.9); box-shadow:0 4px 14px rgba(15,23,42,.12); font:11px 'DM Sans',sans-serif; }
+    .ol-attribution button { display:none; }
+    .ol-attribution ul { margin:0; padding:5px 8px; color:#475569; }
+    .ol-attribution a { color:#334155; text-decoration:underline; }
     .marker-pin { width:36px; height:36px; border:3px solid white; border-radius:50% 50% 50% 0; background:#f97316; box-shadow:0 7px 18px rgba(15,23,42,.28); transform:rotate(-45deg); transition:.2s; cursor:pointer; }
     .marker-pin::after { content:'N'; display:grid; place-items:center; height:100%; color:white; font:800 13px 'Plus Jakarta Sans'; transform:rotate(45deg); }
     .marker-pin.selected { width:44px; height:44px; background:#172033; box-shadow:0 0 0 7px rgba(249,115,22,.25),0 10px 24px rgba(15,23,42,.35); }
@@ -108,7 +111,7 @@
         if (!mapRef.current || mapInstance.current) return;
         vectorSource.current = new ol.source.Vector();
         const vectorLayer = new ol.layer.Vector({ source:vectorSource.current });
-        const map = new ol.Map({ target:mapRef.current, layers:[new ol.layer.Tile({ source:new ol.source.OSM() }), vectorLayer], view:new ol.View({ center:ol.proj.fromLonLat(DEFAULT_CENTER), zoom:7.2, maxZoom:19 }), controls:[] });
+        const map = new ol.Map({ target:mapRef.current, layers:[new ol.layer.Tile({ source:new ol.source.OSM() }), vectorLayer], view:new ol.View({ center:ol.proj.fromLonLat(DEFAULT_CENTER), zoom:7.2, maxZoom:19 }), controls:[new ol.control.Attribution({ collapsible:false })] });
         map.on('click', event => {
           const feature = map.forEachFeatureAtPixel(event.pixel, candidate => candidate);
           if (feature && feature.get('market')) { setSelected(feature.get('market')); setShowPanel(true); }
@@ -136,7 +139,17 @@
           const extent = ol.extent.boundingExtent(filtered.map(item => ol.proj.fromLonLat([item.lon,item.lat])));
           map.getView().fit(extent, { padding:[110,440,170,110], maxZoom:13, duration:450 });
         }
-      }, [filtered, selected]);
+      }, [filtered]);
+
+      useEffect(() => {
+        const map = mapInstance.current;
+        if (!map) return;
+        map.getOverlays().getArray().forEach(overlay => {
+          const element = overlay.getElement();
+          const market = overlay.get('market');
+          if (element && market) element.classList.toggle('selected', Boolean(selected && selected.firestoreId === market.firestoreId));
+        });
+      }, [selected]);
 
       useEffect(() => { if (selected && mapInstance.current) mapInstance.current.getView().animate({ center:ol.proj.fromLonLat([selected.lon,selected.lat]), duration:350 }); }, [selected]);
 
@@ -145,7 +158,7 @@
         if (!filtered.length) mapInstance.current.getView().animate({ center:ol.proj.fromLonLat(DEFAULT_CENTER), zoom:7.2, duration:500 });
         else { const extent = ol.extent.boundingExtent(filtered.map(item => ol.proj.fromLonLat([item.lon,item.lat]))); mapInstance.current.getView().fit(extent,{padding:[110,440,170,110],maxZoom:13,duration:500}); }
       };
-      const selectMarket = market => { setSelected(market); setShowPanel(true); if (mapInstance.current) mapInstance.current.getView().animate({ center:ol.proj.fromLonLat([market.lon,market.lat]), zoom:Math.max(mapInstance.current.getView().getZoom(),11), duration:400 }); };
+      const selectMarket = market => { setSelected(market); setShowPanel(true); if (mapInstance.current) mapInstance.current.getView().animate({ center:ol.proj.fromLonLat([market.lon,market.lat]), duration:400 }); };
       const detail = selected ? h('div', { className:'detail-panel flex h-full flex-col' },
         h('div', { className:'relative h-52 shrink-0 overflow-hidden bg-slate-200' },
           selected.img_url ? h('img', { src:selected.img_url, alt:selected.name, className:'h-full w-full object-cover', onError:e => e.currentTarget.style.display='none' }) : null,
