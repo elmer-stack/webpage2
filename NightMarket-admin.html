@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#11141e" />
+  <title>NightMarket · 資料管理後台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['DM Sans', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            display: ['Plus Jakarta Sans', 'ui-sans-serif', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7fb; color: #172033; font-family: 'DM Sans', sans-serif; }
+    .font-display { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .sidebar-item { display:flex; align-items:center; gap:12px; width:100%; padding:11px 12px; border-radius:12px; color:#8992a5; font-size:12px; font-weight:700; text-align:left; transition:.18s; }
+    .sidebar-item:hover { color:#fff; background:rgba(255,255,255,.06); transform:translateX(2px); }
+    .sidebar-item.active { color:#fff; background:linear-gradient(100deg,rgba(249,115,22,.2),rgba(249,115,22,.04)); box-shadow:inset 3px 0 #f97316; }
+    .sidebar-item.active svg { color:#fb923c; }
+    .form-input { width:100%; height:44px; border:1px solid #e2e6ee; border-radius:12px; background:#fff; padding:0 13px; color:#172033; font-size:13px; outline:none; transition:.16s; }
+    textarea.form-input { height:auto; padding-top:12px; padding-bottom:12px; }
+    .form-input:focus { border-color:#fb923c; box-shadow:0 0 0 4px rgba(249,115,22,.1); }
+    .modal-backdrop { animation:fade .18s ease-out; }
+    .modal-panel { animation:pop .24s cubic-bezier(.23,1,.32,1); }
+    @keyframes fade { from{opacity:0} to{opacity:1} }
+    @keyframes pop { from{opacity:0;transform:translateY(14px) scale(.985)} to{opacity:1;transform:none} }
+    @media (max-width: 1023px) { .sidebar { transform:translateX(-100%); } .sidebar.open { transform:translateX(0); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD8rihVToD511YWZ62juqWstwg8wHOrF_4",
+      authDomain: "webpage2-545e6.firebaseapp.com",
+      projectId: "webpage2-545e6",
+      storageBucket: "webpage2-545e6.firebasestorage.app",
+      messagingSenderId: "966272045472",
+      appId: "1:966272045472:web:dee262657f13d8328a54c5",
+      measurementId: "G-98CSYWEKPC"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const COLLECTION = 'NightMarket';
+    const PAGE_SIZE = 6;
+    const EMPTY = { id:'', name:'', text:'', img_url:'', address:'', lon:'', lat:'' };
+
+    const icon = (name, size=17) => React.createElement('i', { 'data-lucide': name, width:size, height:size, strokeWidth:2 });
+    const idFor = () => `NM-${Date.now().toString(36).toUpperCase()}`;
+    const recordFor = (doc) => {
+      const d = doc.data() || {};
+      return { firestoreId:doc.id, id:String(d.id || doc.id), name:String(d.name || '未命名夜市'), text:String(d.text || ''), img_url:String(d.img_url || ''), address:String(d.address || ''), lon:Number(d.lon || 0), lat:Number(d.lat || 0) };
+    };
+
+    function App() {
+      const [rows, setRows] = useState([]);
+      const [status, setStatus] = useState('connecting');
+      const [keyword, setKeyword] = useState('');
+      const [page, setPage] = useState(1);
+      const [modal, setModal] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const [form, setForm] = useState(EMPTY);
+      const [saving, setSaving] = useState(false);
+      const [menuOpen, setMenuOpen] = useState(false);
+
+      useEffect(() => {
+        const unsub = db.collection(COLLECTION).onSnapshot(snapshot => {
+          setRows(snapshot.docs.map(recordFor).sort((a,b) => a.name.localeCompare(b.name, 'zh-Hant')));
+          setStatus('connected');
+        }, error => { console.error(error); setStatus('error'); });
+        return unsub;
+      }, []);
+
+      useEffect(() => { window.lucide?.createIcons(); }, [rows, modal, menuOpen, page, status]);
+      useEffect(() => { if (modal) document.body.style.overflow='hidden'; else document.body.style.overflow=''; return () => document.body.style.overflow=''; }, [modal]);
+
+      const filtered = useMemo(() => {
+        const q = keyword.trim().toLowerCase();
+        if (!q) return rows;
+        return rows.filter(r => [r.id,r.name,r.text,r.address].some(v => v.toLowerCase().includes(q)));
+      }, [rows, keyword]);
+      const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+      const visible = filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
+      useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
+
+      const setValue = (key, value) => setForm(f => ({...f, [key]:value}));
+      const openCreate = () => { setEditing(null); setForm({...EMPTY, id:idFor()}); setModal(true); };
+      const openEdit = row => { setEditing(row); setForm({ id:row.id, name:row.name, text:row.text, img_url:row.img_url, address:row.address, lon:row.lon ? String(row.lon):'', lat:row.lat ? String(row.lat):'' }); setModal(true); };
+      const save = async e => {
+        e.preventDefault();
+        if (!form.name.trim() || !form.address.trim()) return alert('請先填寫夜市名稱與地址');
+        setSaving(true);
+        const payload = { name:form.name.trim(), text:form.text.trim(), img_url:form.img_url.trim(), address:form.address.trim(), lon:Number(form.lon)||0, lat:Number(form.lat)||0 };
+        try {
+          if (editing) await db.collection(COLLECTION).doc(editing.firestoreId).update(payload);
+          else await db.collection(COLLECTION).add({ id:form.id.trim() || idFor(), ...payload });
+          setModal(false);
+        } catch (err) { console.error(err); alert('儲存失敗，請確認 Firestore Security Rules。'); }
+        finally { setSaving(false); }
+      };
+      const remove = async row => {
+        if (!confirm(`確定要刪除「${row.name}」嗎？此操作無法復原。`)) return;
+        try { await db.collection(COLLECTION).doc(row.firestoreId).delete(); }
+        catch (err) { console.error(err); alert('刪除失敗，請確認 Firestore 權限設定。'); }
+      };
+
+      const stats = [
+        ['夜市總數', String(rows.length).padStart(2,'0'), '即時同步資料筆數', 'map-pin', 'orange'],
+        ['已建置縮圖', String(rows.filter(r=>r.img_url).length).padStart(2,'0'), `${rows.length ? Math.round(rows.filter(r=>r.img_url).length/rows.length*100):0}% 資料已有圖片`, 'image', 'sky'],
+        ['座標完整度', String(rows.filter(r=>r.lat || r.lon).length).padStart(2,'0'), `${rows.length ? Math.round(rows.filter(r=>r.lat || r.lon).length/rows.length*100):0}% 可顯示於地圖`, 'map-pinned', 'green'],
+        ['資料狀態', status==='connected' ? '正常' : status==='connecting' ? '連線中' : '錯誤', status==='connected' ? 'Firestore 即時監聽已啟用' : '請檢查 Firestore 設定', status==='error' ? 'alert-circle' : 'check', 'violet']
+      ];
+
+      return <div className="min-h-screen bg-[#f6f7fb]">
+        <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col bg-[#11141e] px-4 pb-5 pt-6 text-white transition-transform duration-300 lg:translate-x-0 ${menuOpen?'open':''}`}>
+          <div className="flex items-center gap-3 px-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-lg font-black shadow-lg">N</div><div><div className="font-display text-[15px] font-extrabold">NIGHTMARKET</div><div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.2em] text-slate-500">Admin console</div></div></div>
+          <div className="mt-12 px-3 text-[10px] font-bold uppercase tracking-[.2em] text-slate-600">Workspace</div>
+          <nav className="mt-3 space-y-1.5"><button className="sidebar-item active" type="button">{icon('layout-dashboard')}<span>資料總覽</span><span className="ml-auto rounded-md bg-orange-500/15 px-2 py-0.5 text-[10px] text-orange-300">LIVE</span></button><button className="sidebar-item" type="button" onClick={()=>alert('分析報表模組即將推出')}>{icon('file-text')}<span>分析報表</span></button><button className="sidebar-item" type="button" onClick={()=>alert('地圖視圖模組即將推出')}>{icon('map-pinned')}<span>地圖視圖</span></button></nav>
+          <div className="mt-10 px-3 text-[10px] font-bold uppercase tracking-[.2em] text-slate-600">System</div>
+          <nav className="mt-3 space-y-1.5"><button className="sidebar-item" type="button" onClick={()=>alert('同步設定由 Firebase 管理')}>{icon('settings')}<span>系統設定</span></button><button className="sidebar-item" type="button" onClick={()=>alert('請確認 Firebase Console 的 Firestore 設定')}>{icon('circle-help')}<span>使用說明</span></button></nav>
+          <div className="mt-auto rounded-2xl border border-white/10 bg-white/[.045] p-4"><div className="flex items-start justify-between"><div className="rounded-lg bg-orange-400/15 p-2 text-orange-300">{icon('zap',15)}</div><span className="text-[10px] text-slate-600">v1.0.0</span></div><p className="mt-4 text-xs font-bold text-slate-200">資料同步中</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">NightMarket 資料會即時同步至 Firestore。</p><div className={`mt-4 flex items-center gap-2 text-[11px] font-semibold ${status==='connected'?'text-emerald-400':'text-amber-400'}`}><span className="h-1.5 w-1.5 rounded-full bg-current" />{status==='connected'?'Firebase 已連線':status==='connecting'?'連線中…':'連線錯誤'}</div></div>
+        </aside>
+        {menuOpen && <button className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" onClick={()=>setMenuOpen(false)} aria-label="關閉選單" />}
+
+        <div className="min-h-screen lg:pl-[248px]">
+          <header className="sticky top-0 z-20 flex h-[76px] items-center justify-between border-b border-slate-200/80 bg-[#f6f7fb]/90 px-5 backdrop-blur-xl sm:px-8 lg:px-10"><div className="flex items-center gap-3"><button className="rounded-lg p-2 text-slate-500 lg:hidden" onClick={()=>setMenuOpen(true)} type="button">{icon('menu',20)}</button><div><p className="hidden text-[10px] font-bold uppercase tracking-[.2em] text-slate-400 sm:block">Workspace / Database</p><h1 className="font-display text-lg font-extrabold sm:mt-1 sm:text-xl">NightMarket 資料管理</h1></div></div><div className="flex items-center gap-3"><div className="relative hidden sm:block">{React.createElement('i', {'data-lucide':'search', width:16, height:16, className:'absolute left-3 top-3 text-slate-400'})}<input value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1)}} className="h-10 w-[210px] rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none focus:border-orange-300" placeholder="搜尋夜市資料…" /></div><button className="relative rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500" type="button">{icon('bell',17)}<span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-orange-500" /></button><div className="hidden h-9 w-px bg-slate-200 sm:block" /><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#172033] text-xs font-extrabold text-orange-300">AD</div></div></header>
+
+          <main className="mx-auto max-w-[1480px] px-5 py-7 sm:px-8 lg:px-10 lg:py-9"><div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.16em] text-orange-600">{icon('database',12)} Firestore collection / NightMarket</div><h2 className="font-display text-3xl font-extrabold tracking-[-.04em] sm:text-[38px]">夜市資料，一處管理。</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-500">集中維護全台夜市資訊、座標與縮圖，讓前台地圖與內容保持最新狀態。</p></div><button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 text-sm font-bold text-white shadow-lg hover:bg-orange-600" onClick={openCreate} type="button">{icon('plus',17)} 新增夜市</button></div>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label,value,note,ico,tint])=><div key={label} className={`relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm`}><div className={`absolute -right-8 -top-8 h-28 w-28 rounded-full bg-${tint}-200 opacity-70 blur-2xl`} /><div className="relative flex items-start justify-between"><div><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-3 font-display text-3xl font-extrabold tracking-tight">{value}</p><p className="mt-2 text-xs text-slate-500">{note}</p></div><div className="rounded-xl bg-slate-50 p-2.5 text-slate-500">{icon(ico,18)}</div></div></div>)}</section>
+            {status==='error' && <div className="mt-6 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{icon('alert-circle',18)}<span><b>Firebase 連線失敗。</b> 請檢查 Firestore Security Rules 與網路連線。</span></div>}
+            <section className="mt-7 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"><div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex items-center gap-2"><h3 className="font-display text-base font-extrabold">所有夜市</h3><span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{filtered.length} 筆</span></div><p className="mt-1 text-xs text-slate-400">管理名稱、描述、位置與展示圖片</p></div><div className="flex items-center gap-2"><div className="relative flex-1 sm:hidden">{icon('search',15)}<input value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1)}} className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs" placeholder="搜尋…" /></div><button className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-600" onClick={()=>alert('目前依名稱排序')} type="button">{icon('sliders-horizontal',14)}<span>排序</span></button></div></div>
+              {visible.length ? <div className="overflow-x-auto"><table className="w-full min-w-[800px] border-collapse text-left"><thead><tr className="border-b border-slate-100 bg-slate-50/65"><th className="px-6 py-3.5 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">縮圖</th><th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">名稱</th><th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">描述</th><th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">地址</th><th className="px-4 py-3.5 text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">經緯度</th><th className="px-6 py-3.5 text-right text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">操作</th></tr></thead><tbody>{visible.map(row=><tr key={row.firestoreId} className="group border-b border-slate-100 last:border-0 hover:bg-orange-50/35"><td className="px-6 py-4"><div className="h-12 w-12 overflow-hidden rounded-xl bg-slate-100">{row.img_url?<img src={row.img_url} alt={row.name} className="h-full w-full object-cover" onError={e=>e.currentTarget.style.display='none'} />:icon('image',18)}</div></td><td className="px-4 py-4"><p className="font-display text-sm font-extrabold">{row.name}</p><p className="mt-1 font-mono text-[10px] text-slate-400">#{row.id}</p></td><td className="px-4 py-4"><p className="max-w-[270px] truncate text-xs text-slate-500">{row.text || '尚未填寫描述'}</p></td><td className="px-4 py-4"><div className="flex max-w-[260px] items-center gap-1.5 truncate text-xs text-slate-600">{icon('map-pin',13)}{row.address || '尚未填寫地址'}</div></td><td className="px-4 py-4 font-mono text-[11px] leading-relaxed text-slate-500"><div>{row.lat ? row.lat.toFixed(4):'—'}° N</div><div>{row.lon ? row.lon.toFixed(4):'—'}° E</div></td><td className="px-6 py-4"><div className="flex justify-end gap-1"><button className="rounded-lg p-2 text-slate-400 hover:bg-orange-100 hover:text-orange-600" onClick={()=>openEdit(row)} type="button">{icon('edit-3',15)}</button><button className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500" onClick={()=>remove(row)} type="button">{icon('trash-2',15)}</button></div></td></tr>)}</tbody></table></div> : <div className="flex flex-col items-center justify-center px-6 py-20 text-center"><div className="rounded-2xl bg-orange-50 p-4 text-orange-500">{icon('search',23)}</div><h4 className="mt-5 font-display text-base font-extrabold">找不到符合的資料</h4><p className="mt-2 text-xs text-slate-500">目前 NightMarket collection 沒有資料，或找不到相符關鍵字。</p><button className="mt-5 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-xs font-bold text-white" onClick={openCreate} type="button">{icon('plus',14)} 新增夜市</button></div>}
+              <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><p className="text-xs text-slate-400">顯示 <b className="text-slate-600">{filtered.length ? (page-1)*PAGE_SIZE+1:0}–{Math.min(page*PAGE_SIZE,filtered.length)}</b> 筆，共 <b className="text-slate-600">{filtered.length}</b> 筆</p><div className="flex items-center gap-1.5"><button disabled={page===1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="rounded-lg border border-slate-200 p-2 text-slate-400 disabled:opacity-40" type="button">{icon('chevron-left',15)}</button><span className="flex h-8 min-w-8 items-center justify-center rounded-lg bg-[#172033] px-2 text-xs font-bold text-white">{page}</span><button disabled={page===pageCount} onClick={()=>setPage(p=>Math.min(pageCount,p+1))} className="rounded-lg border border-slate-200 p-2 text-slate-400 disabled:opacity-40" type="button">{icon('chevron-right',15)}</button></div></div>
+            </section><p className="mt-5 px-1 text-[11px] text-slate-400">NightMarket Admin · Firestore data console</p>
+          </main>
+        </div>
+
+        {modal && <div className="modal-backdrop fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-5" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="modal-panel max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-[650px] sm:rounded-3xl"><div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white/95 px-6 py-5 backdrop-blur sm:px-7"><div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-orange-500">● {editing?'Edit record':'New record'}</div><h3 className="font-display text-xl font-extrabold">{editing?'編輯夜市資料':'新增夜市資料'}</h3><p className="mt-1 text-xs text-slate-500">完成後會同步至 Firebase Firestore。</p></div><button className="rounded-xl p-2 text-slate-400 hover:bg-slate-100" onClick={()=>setModal(false)} type="button">{icon('x',19)}</button></div><form className="space-y-5 px-6 py-6 sm:px-7" onSubmit={save}><div className="grid gap-5 sm:grid-cols-2"><div className="sm:col-span-2"><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">名稱 <span className="text-orange-500">*</span></label><input className="form-input" value={form.name} onChange={e=>setValue('name',e.target.value)} placeholder="例如：饒河街觀光夜市" required /></div><div className="sm:col-span-2"><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">描述</label><textarea className="form-input min-h-[92px] resize-y" value={form.text} onChange={e=>setValue('text',e.target.value)} placeholder="簡短介紹這個夜市的特色…" /></div><div className="sm:col-span-2"><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">縮圖網址</label><input className="form-input" value={form.img_url} onChange={e=>setValue('img_url',e.target.value)} placeholder="https://example.com/night-market.jpg" type="url" />{form.img_url && <img src={form.img_url} alt="縮圖預覽" className="mt-3 h-16 w-24 rounded-lg object-cover" />}</div><div className="sm:col-span-2"><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">地址 <span className="text-orange-500">*</span></label><input className="form-input" value={form.address} onChange={e=>setValue('address',e.target.value)} placeholder="例如：台北市松山區饒河街" required /></div><div><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">經度</label><input className="form-input font-mono" value={form.lon} onChange={e=>setValue('lon',e.target.value)} placeholder="121.5742" type="number" step="any" /></div><div><label className="mb-2 block text-[11px] font-bold uppercase tracking-[.16em] text-slate-500">緯度</label><input className="form-input font-mono" value={form.lat} onChange={e=>setValue('lat',e.target.value)} placeholder="25.0504" type="number" step="any" /></div></div><div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end"><button className="h-11 rounded-xl px-4 text-sm font-bold text-slate-500 hover:bg-slate-100" onClick={()=>setModal(false)} type="button">取消</button><button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60" disabled={saving} type="submit">{icon(saving?'loader-circle':'check',16)}{saving?'儲存中…':editing?'儲存變更':'建立資料'}</button></div></form></div></div>}
+      </div>;
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
